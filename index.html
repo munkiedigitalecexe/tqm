@@ -1,0 +1,352 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Te Quiero - Corazones</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+      font-family: monospace;
+      touch-action: none;
+    }
+
+    .controls {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      z-index: 10;
+      color: white;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+      transition: opacity 0.3s ease;
+    }
+
+    .controls.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .controls label {
+      margin-right: 10px;
+      font-weight: bold;
+    }
+
+    .controls input, .controls select, .controls button {
+      padding: 6px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: none;
+    }
+
+    .controls button {
+      background: #ff3366;
+      color: white;
+      cursor: pointer;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .message {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 18px;
+      text-align: center;
+      z-index: 20;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px;
+      border-radius: 8px;
+      opacity: 1;
+      transition: opacity 1s ease;
+    }
+
+    .message.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls" id="controls">
+    <button id="toggleControls">Ocultar Controles</button>
+    <div>
+      <label for="speed">Velocidad:</label>
+      <input type="range" id="speed" min="1" max="10" value="5">
+    </div>
+    <div>
+      <label for="color">Color:</label>
+      <input type="color" id="color" value="#ff3366">
+    </div>
+    <div>
+      <label for="text">Texto:</label>
+      <select id="text">
+        <option value="Te Quiero">Te Quiero</option>
+        <option value="Mucho">Mucho</option>
+      </select>
+    </div>
+  </div>
+  <canvas id="matrixCanvas"></canvas>
+  <div class="message" id="welcomeMessage">Toca la pantalla para crear corazones</div>
+
+  <script>
+    // Canvas setup
+    const canvas = document.getElementById('matrixCanvas');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+    let fontSize = Math.max(14, Math.min(18, window.innerWidth / 20));
+    let columns = Math.floor(width / fontSize);
+    let drops = Array(columns).fill(1);
+
+    // Animation state
+    let speed = 5;
+    let color = '#ff3366';
+    let text = 'Te Quiero';
+    const particleCount = 8; // Fixed value since slider is removed
+    let lastFrameTime = performance.now();
+    const hearts = [];
+
+    // Glitch text setup
+    const glitchText = 'Desarrollado por munkiedigital_ec';
+    let glitchChars = glitchText.split('');
+    let glitchFrame = 0;
+    const glitchSymbols = '!@#$%^&*()+-=[]{}|;:,.<>?';
+
+    // Welcome message
+    const welcomeMessage = document.getElementById('welcomeMessage');
+    welcomeMessage.style.display = 'block';
+    setTimeout(() => {
+      welcomeMessage.classList.add('hidden');
+    }, 3000);
+
+    // Controls
+    const controls = document.getElementById('controls');
+    const toggleControlsBtn = document.getElementById('toggleControls');
+    toggleControlsBtn.addEventListener('click', () => {
+      controls.classList.toggle('hidden');
+      toggleControlsBtn.textContent = controls.classList.contains('hidden')
+        ? 'Mostrar Controles'
+        : 'Ocultar Controles';
+    });
+
+    document.getElementById('speed').addEventListener('input', (e) => {
+      speed = 11 - parseInt(e.target.value);
+    });
+
+    document.getElementById('color').addEventListener('input', (e) => {
+      color = e.target.value;
+    });
+
+    document.getElementById('text').addEventListener('change', (e) => {
+      text = e.target.value;
+    });
+
+    // Heart particle class
+    class HeartParticle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.size = Math.random() * 0.8 + 0.4;
+        this.color = color;
+        this.alpha = 1;
+        this.angle = Math.random() * 2 * Math.PI;
+        this.speed = Math.random() * 3 + 1;
+        this.gravity = 0.04;
+        this.vx = Math.cos(this.angle) * this.speed;
+        this.vy = Math.sin(this.angle) * this.speed;
+        this.life = 0;
+        this.maxLife = 80;
+      }
+
+      update() {
+        this.vy += this.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life++;
+        this.alpha = 1 - this.life / this.maxLife;
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.size, this.size);
+        ctx.beginPath();
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(0, -3, -5, -3, -5, 0);
+        ctx.bezierCurveTo(-5, 3, 0, 5, 0, 7);
+        ctx.bezierCurveTo(0, 5, 5, 3, 5, 0);
+        ctx.bezierCurveTo(5, -3, 0, -3, 0, 0);
+        ctx.fill();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      isAlive() {
+        return this.life < this.maxLife && this.y < height && this.alpha > 0;
+      }
+    }
+
+    // Create heart explosion
+    function createExplosion(x, y) {
+      for (let i = 0; i < particleCount; i++) {
+        if (hearts.length < 100) {
+          hearts.push(new HeartParticle(x, y, color));
+        }
+      }
+    }
+
+    // Event listeners for interaction
+    canvas.addEventListener('click', (e) => {
+      e.preventDefault();
+      createExplosion(e.clientX, e.clientY);
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      createExplosion(touch.clientX, touch.clientY);
+    });
+
+    // Throttled resize handler
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        fontSize = Math.max(14, Math.min(18, window.innerWidth / 20));
+        columns = Math.floor(width / fontSize);
+        drops = Array(columns).fill(1);
+      }, 100);
+    });
+
+    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+    // Glitch effect for text
+    function updateGlitchText() {
+      glitchFrame++;
+      if (glitchFrame % 3 === 0) {
+        glitchChars = glitchText.split('');
+        for (let i = 0; i < glitchChars.length; i++) {
+          if (Math.random() < 0.2) {
+            glitchChars[i] = glitchSymbols[Math.floor(Math.random() * glitchSymbols.length)];
+          }
+        }
+      }
+    }
+
+    // Main animation loop
+    function draw() {
+      const now = performance.now();
+      const deltaTime = now - lastFrameTime;
+
+      if (deltaTime < speed * 10) {
+        requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = now;
+
+      // Clear canvas with slight fade
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw matrix text
+      ctx.fillStyle = color;
+      ctx.font = `${fontSize}px monospace`;
+      for (let i = 0; i < drops.length; i++) {
+        const x = i * fontSize;
+        const y = drops[i] * fontSize;
+        ctx.fillText(text, x, y);
+        if (y > height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+
+      // Draw horizontal glitch text
+      updateGlitchText();
+      ctx.save();
+      ctx.fillStyle = '#00FF00'; // Permanent green
+      ctx.font = `${fontSize - 5}px monospace`; // 5 points smaller
+      ctx.textAlign = 'center'; // Center the text horizontally
+      ctx.globalAlpha = Math.sin(glitchFrame * 0.15) * 0.4 + 0.6; // Aggressive flicker (0.2 to 1.0)
+      ctx.fillText(glitchChars.join(''), width * 0.5, height - 10);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+
+      // Update and draw heart particles
+      for (let i = hearts.length - 1; i >= 0; i--) {
+        hearts[i].update();
+        hearts[i].draw(ctx);
+        if (!hearts[i].isAlive()) {
+          hearts.splice(i, 1);
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    // Start animation
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
